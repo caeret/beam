@@ -10,7 +10,6 @@ import (
 
 var (
 	ErrFormat = errors.New("invalid format")
-	crlf      = []byte{'\r', '\n'}
 )
 
 // NewRequest create new request from string arguments.
@@ -26,7 +25,7 @@ func NewRequest(args ...string) Request {
 type Request [][]byte
 
 func (r Request) String() string {
-	return `"` + string(bytes.Join(r, []byte{' '})) + `"`
+	return escapeCrlf(r.Raw())
 }
 
 func (r Request) Raw() string {

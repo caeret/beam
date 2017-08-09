@@ -33,10 +33,10 @@ func TestReadRequest(t *testing.T) {
 func TestRequest_String(t *testing.T) {
 	assert := assert.New(t)
 	req1 := Request{[]byte("GET"), []byte("bar")}
-	assert.Equal(req1.String(), `"GET bar"`)
+	assert.Equal(req1.String(), "*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nbar\\r\\n")
 
 	req2 := Request{[]byte("PING")}
-	assert.Equal(req2.String(), `"PING"`)
+	assert.Equal(req2.String(), "*1\\r\\n$4\\r\\nPING\\r\\n")
 }
 
 func TestRequest_Raw(t *testing.T) {
