@@ -47,3 +47,10 @@ func TestRequest_Raw(t *testing.T) {
 	req2 := Request{[]byte("PING")}
 	assert.Equal(req2.Raw(), "*1\r\n$4\r\nPING\r\n")
 }
+
+func TestNewRequest(t *testing.T) {
+	assert := assert.New(t)
+	req := NewRequest("PING")
+	assert.Len(req, 1)
+	assert.Equal([]byte("PING"), req[0])
+}

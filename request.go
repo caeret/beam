@@ -13,6 +13,15 @@ var (
 	crlf      = []byte{'\r', '\n'}
 )
 
+// NewRequest create new request from string arguments.
+func NewRequest(args ...string) Request {
+	req := make(Request, len(args))
+	for i, arg := range args {
+		req[i] = []byte(arg)
+	}
+	return req
+}
+
 // Request represent the redis request command.
 type Request [][]byte
 
