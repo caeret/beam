@@ -12,7 +12,7 @@ var (
 	ErrFormat = errors.New("invalid format")
 )
 
-// NewRequest create new request from string arguments.
+// NewRequest creates new request from string arguments.
 func NewRequest(args ...string) Request {
 	req := make(Request, len(args))
 	for i, arg := range args {
@@ -21,7 +21,7 @@ func NewRequest(args ...string) Request {
 	return req
 }
 
-// Request represent the redis request command.
+// Request represents the redis request command.
 type Request [][]byte
 
 func (r Request) String() string {
@@ -37,7 +37,7 @@ func (r Request) Raw() string {
 	return raw
 }
 
-// ReadRequest read a request from the io.Reader.
+// ReadRequest reads a request from the io.Reader.
 func ReadRequest(reader io.Reader) (request Request, err error) {
 	bReader := bufio.NewReader(reader)
 	n, err := readArgsCount(bReader)
@@ -65,7 +65,7 @@ func ReadRequest(reader io.Reader) (request Request, err error) {
 	return
 }
 
-// readArgsCount read arguments count from reader.
+// readArgsCount reads arguments count from reader.
 func readArgsCount(reader *bufio.Reader) (n int, err error) {
 	argsCount, err := readPrefixedLine('*', reader)
 	if err != nil {
@@ -75,7 +75,7 @@ func readArgsCount(reader *bufio.Reader) (n int, err error) {
 	return
 }
 
-// readArgLength read the length of argument from reader.
+// readArgLength reads the length of argument from reader.
 func readArgLength(reader *bufio.Reader) (n int, err error) {
 	argLength, err := readPrefixedLine('$', reader)
 	if err != nil {
@@ -85,7 +85,7 @@ func readArgLength(reader *bufio.Reader) (n int, err error) {
 	return
 }
 
-// readPrefixedLine read the line starts by the specified prefix and ends with crlf.
+// readPrefixedLine reads the line starts by the specified prefix and ends with crlf.
 func readPrefixedLine(prefix byte, reader *bufio.Reader) (line []byte, err error) {
 	b, err := reader.ReadByte()
 	if err != nil {
@@ -107,7 +107,7 @@ func readPrefixedLine(prefix byte, reader *bufio.Reader) (line []byte, err error
 	return
 }
 
-// readArgLine read the line with specified length.
+// readArgLine reads the line with specified length.
 func readArgLine(length int, reader *bufio.Reader) (line []byte, err error) {
 	line = make([]byte, length+2)
 	var (
