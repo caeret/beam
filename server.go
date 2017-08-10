@@ -3,6 +3,7 @@ package beam
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -19,14 +20,18 @@ func NewServer(config Config) *Server {
 		s.logger = config.Logger
 	}
 	s.handler = config.Handler
+	s.closeCh = make(chan struct{})
 	return s
 }
 
 // Server is a redis protocol supported engine.
 type Server struct {
-	config  Config
-	logger  Logger
-	handler Handler
+	config   Config
+	logger   Logger
+	handler  Handler
+	listener net.Listener
+	wg       sync.WaitGroup
+	closeCh  chan struct{}
 }
 
 // Serve runs the server engine on the given addr.
@@ -35,11 +40,16 @@ func (s *Server) Serve(addr string) error {
 	if err != nil {
 		return err
 	}
+	s.listener = l
 
 	s.logger.Log(LogLevelInfo, fmt.Sprintf("listen on: %s.", addr))
 
 	sleep := time.Second
 	for {
+		if s.closed() {
+			return nil
+		}
+
 		conn, err := l.Accept()
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
@@ -47,20 +57,37 @@ func (s *Server) Serve(addr string) error {
 				sleep *= 2
 				continue
 			}
+			if s.closed() {
+				s.logger.Log(LogLevelWarning, fmt.Sprintf("server is closed already: %s.", err.Error()))
+				return nil
+			}
 			return err
 		}
 		sleep = time.Second
 
-		go s.handleConn(conn)
+		s.wg.Add(1)
+		go protectCall(func() { s.handleConn(conn) }, s.logger)
+	}
+}
+
+// Stop stops the running server.
+func (s *Server) Stop() error {
+	close(s.closeCh)
+	s.wg.Wait()
+	return s.listener.Close()
+}
+
+func (s *Server) closed() bool {
+	select {
+	case <-s.closeCh:
+		return true
+	default:
+		return false
 	}
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	defer func() {
-		if err := recover(); err != nil {
-			s.logger.Log(LogLevelError, fmt.Sprintf("panic: %v from %s.", err, conn.RemoteAddr()))
-		}
-	}()
+	defer s.wg.Done()
 
 	s.logger.Log(LogLevelDebug, fmt.Sprintf("handle new connection from %s.", conn.RemoteAddr()))
 
@@ -74,9 +101,12 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	var shouldReturn bool
 	for {
-		err := conn.SetDeadline(time.Now().Add(s.config.Timeout))
+		if s.closed() {
+			return
+		}
+		err := conn.SetReadDeadline(time.Now().Add(s.config.Timeout))
 		if err != nil {
-			s.logger.Log(LogLevelError, fmt.Sprintf("fail to set deadline: %s.", err.Error()))
+			s.logger.Log(LogLevelError, fmt.Sprintf("fail to set read deadline: %s.", err.Error()))
 			return
 		}
 
@@ -103,10 +133,16 @@ func (s *Server) handleConn(conn net.Conn) {
 			}
 		} else {
 			shouldReturn = true
-			resp = NewErrorsResponse("Error the command Handler should be provided")
+			resp = NewErrorsResponse("Error the Handler should be provided")
 		}
 
 		s.logger.Log(LogLevelDebug, fmt.Sprintf("send response: \"%s\".", resp))
+
+		err = conn.SetWriteDeadline(time.Now().Add(s.config.Timeout))
+		if err != nil {
+			s.logger.Log(LogLevelError, fmt.Sprintf("fail to set write deadline: %s.", err.Error()))
+			return
+		}
 
 		_, err = conn.Write(resp)
 		if err != nil {
