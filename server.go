@@ -59,7 +59,7 @@ func (s *Server) Serve(addr string) error {
 			}
 			if s.closed() {
 				s.logger.Log(LogLevelWarning, fmt.Sprintf("server is closed already: %s.", err.Error()))
-				return nil
+				break
 			}
 			return err
 		}
@@ -68,13 +68,16 @@ func (s *Server) Serve(addr string) error {
 		s.wg.Add(1)
 		go protectCall(func() { s.handleConn(conn) }, s.logger)
 	}
+
+	s.wg.Wait()
+	return nil
 }
 
 // Stop stops the running server.
 func (s *Server) Stop() error {
 	close(s.closeCh)
-	s.wg.Wait()
-	return s.listener.Close()
+	err := s.listener.Close()
+	return err
 }
 
 func (s *Server) closed() bool {
