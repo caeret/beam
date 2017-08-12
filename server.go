@@ -1,10 +1,11 @@
 package beam
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/gaemma/logging"
 )
 
 // NewServer creates a redis protocol supported server.
@@ -15,7 +16,7 @@ func NewServer(config Config) *Server {
 	}
 	s.config = config
 	if config.Logger == nil {
-		s.logger = nopLogger
+		s.logger = logging.NewNopLogger()
 	} else {
 		s.logger = config.Logger
 	}
@@ -27,7 +28,7 @@ func NewServer(config Config) *Server {
 // Server is a redis protocol supported engine.
 type Server struct {
 	config   Config
-	logger   Logger
+	logger   logging.Logger
 	handler  Handler
 	listener net.Listener
 	wg       sync.WaitGroup
@@ -42,7 +43,7 @@ func (s *Server) Serve(addr string) error {
 	}
 	s.listener = l
 
-	s.logger.Log(LogLevelInfo, fmt.Sprintf("listen on: %s.", addr))
+	s.logger.Info("listen on: %s.", addr)
 
 	sleep := time.Second
 	for {
@@ -58,7 +59,7 @@ func (s *Server) Serve(addr string) error {
 				continue
 			}
 			if s.closed() {
-				s.logger.Log(LogLevelWarning, fmt.Sprintf("server is closed already: %s.", err.Error()))
+				s.logger.Warning("server is closed already: %s.", err.Error())
 				break
 			}
 			return err
@@ -92,13 +93,13 @@ func (s *Server) closed() bool {
 func (s *Server) handleConn(conn net.Conn) {
 	defer s.wg.Done()
 
-	s.logger.Log(LogLevelDebug, fmt.Sprintf("handle new connection from %s.", conn.RemoteAddr()))
+	s.logger.Debug("handle new connection from %s.", conn.RemoteAddr())
 
 	defer func() {
-		s.logger.Log(LogLevelDebug, fmt.Sprintf("close connection from %s.", conn.RemoteAddr()))
+		s.logger.Debug("close connection from %s.", conn.RemoteAddr())
 		err := conn.Close()
 		if err != nil {
-			s.logger.Log(LogLevelWarning, fmt.Sprintf("there is an error when close the connection from %s.", conn.RemoteAddr()))
+			s.logger.Warning("there is an error when close the connection from %s.", conn.RemoteAddr())
 		}
 	}()
 
@@ -109,21 +110,21 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 		err := conn.SetReadDeadline(time.Now().Add(s.config.Timeout))
 		if err != nil {
-			s.logger.Log(LogLevelError, fmt.Sprintf("fail to set read deadline: %s.", err.Error()))
+			s.logger.Error("fail to set read deadline: %s.", err.Error())
 			return
 		}
 
 		req, err := ReadRequest(conn)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				s.logger.Log(LogLevelWarning, fmt.Sprintf("timeout from %s.", conn.RemoteAddr()))
+				s.logger.Warning("timeout from %s.", conn.RemoteAddr())
 				return
 			}
-			s.logger.Log(LogLevelError, fmt.Sprintf("fail to read request: %s.", err.Error()))
+			s.logger.Error("fail to read request: %s.", err.Error())
 			return
 		}
 
-		s.logger.Log(LogLevelDebug, fmt.Sprintf("read request: \"%s\".", req))
+		s.logger.Debug("read request: \"%s\".", req)
 
 		var resp Response
 
@@ -132,25 +133,25 @@ func (s *Server) handleConn(conn net.Conn) {
 			if err != nil {
 				shouldReturn = true
 				resp = NewErrorsResponse("Error internal error")
-				s.logger.Log(LogLevelError, err.Error())
+				s.logger.Error("fail to handle request: %s", err.Error())
 			}
 		} else {
 			shouldReturn = true
 			resp = NewErrorsResponse("Error the Handler should be provided")
 		}
 
-		s.logger.Log(LogLevelDebug, fmt.Sprintf("send response: \"%s\".", resp))
+		s.logger.Debug("send response: \"%s\".", resp)
 
 		err = conn.SetWriteDeadline(time.Now().Add(s.config.Timeout))
 		if err != nil {
-			s.logger.Log(LogLevelError, fmt.Sprintf("fail to set write deadline: %s.", err.Error()))
+			s.logger.Error("fail to set write deadline: %s.", err.Error())
 			return
 		}
 
 		_, err = conn.Write(resp)
 		if err != nil {
 			shouldReturn = true
-			s.logger.Log(LogLevelError, fmt.Sprintf("fail to write response: %s.", err.Error()))
+			s.logger.Error("fail to write response: %s.", err.Error())
 		}
 
 		if shouldReturn {

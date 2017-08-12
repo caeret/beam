@@ -1,8 +1,9 @@
 package beam
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/gaemma/logging"
 )
 
 var (
@@ -13,10 +14,10 @@ func escapeCrlf(data string) string {
 	return strings.NewReplacer("\r", "\\r", "\n", "\\n").Replace(data)
 }
 
-func protectCall(call func(), logger Logger) {
+func protectCall(call func(), logger logging.Logger) {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.Log(LogLevelError, fmt.Sprintf("panic: %v.", err))
+			logger.Error("recover from panic: %v.", err)
 		}
 	}()
 	call()
