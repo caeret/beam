@@ -1,6 +1,8 @@
 package beam
 
 import (
+	"errors"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -8,11 +10,16 @@ import (
 	"github.com/gaemma/logging"
 )
 
+var ErrServerClosed = errors.New("beam: Server closed")
+
 // NewServer creates a redis protocol supported server.
 func NewServer(config Config) *Server {
 	s := new(Server)
-	if config.Timeout <= 0 {
-		config.Timeout = time.Second * 30
+	if config.RWTimeout <= 0 {
+		config.RWTimeout = time.Second * 5
+	}
+	if config.IdleTimeout <= 0 {
+		config.IdleTimeout = time.Minute * 5
 	}
 	s.config = config
 	if config.Logger == nil {
@@ -43,15 +50,16 @@ func (s *Server) Serve(addr string) error {
 	}
 	s.listener = l
 
-	s.logger.Info("listen on: %s.", addr)
+	s.logger.Info("boot the beam server \"%s\".", addr)
 
 	sleep := time.Second
 	for {
 		if s.closed() {
-			return nil
+			return ErrServerClosed
 		}
 
-		conn, err := l.Accept()
+		var conn net.Conn
+		conn, err = l.Accept()
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
 				time.Sleep(sleep)
@@ -59,7 +67,7 @@ func (s *Server) Serve(addr string) error {
 				continue
 			}
 			if s.closed() {
-				s.logger.Warning("server is closed already: %s.", err.Error())
+				err = ErrServerClosed
 				break
 			}
 			return err
@@ -67,15 +75,16 @@ func (s *Server) Serve(addr string) error {
 		sleep = time.Second
 
 		s.wg.Add(1)
-		go protectCall(func() { s.handleConn(conn) }, s.logger)
+		go protectCall(func() { s.handleConn(NewConn(conn)) }, s.logger)
 	}
 
 	s.wg.Wait()
-	return nil
+	return err
 }
 
 // Stop stops the running server.
 func (s *Server) Stop() error {
+	s.logger.Info("server is closed.")
 	close(s.closeCh)
 	err := s.listener.Close()
 	return err
@@ -90,7 +99,7 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) {
+func (s *Server) handleConn(conn *Conn) {
 	defer s.wg.Done()
 
 	s.logger.Debug("handle new connection from %s.", conn.RemoteAddr())
@@ -104,11 +113,16 @@ func (s *Server) handleConn(conn net.Conn) {
 	}()
 
 	var shouldReturn bool
+	conn.refreshDeadline(s.config.IdleTimeout)
 	for {
 		if s.closed() {
 			return
 		}
-		err := conn.SetReadDeadline(time.Now().Add(s.config.Timeout))
+		if !conn.beforeDeadline() {
+			s.logger.Debug("deadline exceeded from %s.", conn.RemoteAddr())
+			return
+		}
+		err := conn.SetReadDeadline(time.Now().Add(s.config.RWTimeout))
 		if err != nil {
 			s.logger.Error("fail to set read deadline: %s.", err.Error())
 			return
@@ -116,13 +130,19 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		req, err := ReadRequest(conn)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				s.logger.Warning("timeout from %s.", conn.RemoteAddr())
+			if err == io.EOF {
+				s.logger.Debug("receive EOF from %s.", conn.RemoteAddr())
 				return
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				s.logger.Debug("read timeout from %s.", conn.RemoteAddr())
+				continue
 			}
 			s.logger.Error("fail to read request: %s.", err.Error())
 			return
 		}
+
+		conn.refreshDeadline(s.config.IdleTimeout)
 
 		s.logger.Debug("read request: \"%s\".", req)
 
@@ -142,8 +162,16 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		s.logger.Debug("send response: \"%s\".", resp)
 
-		err = conn.SetWriteDeadline(time.Now().Add(s.config.Timeout))
+		err = conn.SetWriteDeadline(time.Now().Add(s.config.RWTimeout))
 		if err != nil {
+			if err == io.EOF {
+				s.logger.Debug("receive EOF from %s.", conn.RemoteAddr())
+				return
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				s.logger.Warning("write timeout from %s.", conn.RemoteAddr())
+				return
+			}
 			s.logger.Error("fail to set write deadline: %s.", err.Error())
 			return
 		}

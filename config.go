@@ -8,7 +8,8 @@ import (
 
 // Config provides the configuration needs by the server.
 type Config struct {
-	Logger  logging.Logger
-	Handler Handler
-	Timeout time.Duration
+	Logger      logging.Logger
+	Handler     Handler
+	RWTimeout   time.Duration
+	IdleTimeout time.Duration
 }
