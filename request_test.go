@@ -2,7 +2,6 @@ package beam
 
 import (
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,23 +10,38 @@ import (
 func TestReadRequest(t *testing.T) {
 	assert := assert.New(t)
 	var (
-		reader io.Reader
-		req    Request
-		err    error
+		req Request
+		b   []byte
+		l   []byte
+		err error
 	)
-	reader = strings.NewReader("*1\r\n$4\r\nPING\r\n")
-	req, err = ReadRequest(reader)
+	b = []byte("*1\r\n$4\r\nPING\r\n")
+	req, l, err = ReadRequest(b)
 	assert.Nil(err)
+	assert.Empty(l)
 	assert.Equal(req, Request{[]byte("PING")})
 
-	reader = strings.NewReader("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n")
-	req, err = ReadRequest(reader)
+	b = []byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n")
+	req, l, err = ReadRequest(b)
 	assert.Nil(err)
-	assert.Equal(req, Request{[]byte("GET"), []byte("foo")})
+	assert.Empty(l)
+	assert.Equal(Request{[]byte("GET"), []byte("foo")}, req)
 
-	reader = strings.NewReader("*2\r\nhello")
-	req, err = ReadRequest(reader)
-	assert.Error(ErrFormat, err)
+	b = []byte("*2\r\nhello")
+	req, l, err = ReadRequest(b)
+	assert.Equal(ErrFormat, err)
+	assert.Empty(l)
+
+	b = []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3GET\r")
+	req, l, err = ReadRequest(b)
+	assert.Nil(err)
+	assert.Equal(Request{[]byte("PING")}, req)
+	assert.Equal([]byte("*2\r\n$3GET\r"), l)
+
+	b = []byte("*2\r\n$3GET\r")
+	req, l, err = ReadRequest(b)
+	assert.Equal(io.EOF, err)
+	assert.Equal(b, l)
 }
 
 func TestRequest_String(t *testing.T) {

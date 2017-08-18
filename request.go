@@ -1,11 +1,11 @@
 package beam
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -19,6 +19,20 @@ func NewRequest(args ...string) Request {
 		req[i] = []byte(arg)
 	}
 	return req
+}
+
+type Requests []Request
+
+func (rs Requests) String() string {
+	return escapeCrlf(rs.Raw())
+}
+
+func (rs Requests) Raw() string {
+	strs := make([]string, len(rs))
+	for i, req := range rs {
+		strs[i] = req.Raw()
+	}
+	return strings.Join(strs, "")
 }
 
 // Request represents the redis request command.
@@ -37,36 +51,46 @@ func (r Request) Raw() string {
 	return raw
 }
 
-// ReadRequest reads a request from the io.Reader.
-func ReadRequest(reader io.Reader) (request Request, err error) {
-	bReader := bufio.NewReader(reader)
-	n, err := readArgsCount(bReader)
+func ReadRequest(b []byte) (request Request, l []byte, err error) {
+	defer func() {
+		if err != nil && err == io.EOF {
+			l = b
+		}
+	}()
+	reader := bytes.NewBuffer(b)
+	cnt, err := readArgsCount(reader)
 	if err != nil {
 		return
 	}
 
-	request = make(Request, n)
+	request = make(Request, 0, cnt)
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < cnt; i++ {
 		var argLength int
-		argLength, err = readArgLength(bReader)
+		argLength, err = readArgLength(reader)
 		if err != nil {
 			return
 		}
 		var arg []byte
-		arg, err = readArgLine(argLength, bReader)
+		arg, err = readArgLine(argLength, reader)
 		if err != nil {
 			return
 		}
 
-		request[i] = arg
+		request = append(request, arg)
 	}
 
+	buff := new(bytes.Buffer)
+	_, err = reader.WriteTo(buff)
+	if err != nil {
+		return
+	}
+	l = buff.Bytes()
 	return
 }
 
 // readArgsCount reads arguments count from reader.
-func readArgsCount(reader *bufio.Reader) (n int, err error) {
+func readArgsCount(reader *bytes.Buffer) (n int, err error) {
 	argsCount, err := readPrefixedLine('*', reader)
 	if err != nil {
 		return
@@ -76,7 +100,7 @@ func readArgsCount(reader *bufio.Reader) (n int, err error) {
 }
 
 // readArgLength reads the length of argument from reader.
-func readArgLength(reader *bufio.Reader) (n int, err error) {
+func readArgLength(reader *bytes.Buffer) (n int, err error) {
 	argLength, err := readPrefixedLine('$', reader)
 	if err != nil {
 		return
@@ -86,7 +110,7 @@ func readArgLength(reader *bufio.Reader) (n int, err error) {
 }
 
 // readPrefixedLine reads the line starts by the specified prefix and ends with crlf.
-func readPrefixedLine(prefix byte, reader *bufio.Reader) (line []byte, err error) {
+func readPrefixedLine(prefix byte, reader *bytes.Buffer) (line []byte, err error) {
 	b, err := reader.ReadByte()
 	if err != nil {
 		return
@@ -108,19 +132,17 @@ func readPrefixedLine(prefix byte, reader *bufio.Reader) (line []byte, err error
 }
 
 // readArgLine reads the line with specified length.
-func readArgLine(length int, reader *bufio.Reader) (line []byte, err error) {
+func readArgLine(length int, reader *bytes.Buffer) (line []byte, err error) {
 	line = make([]byte, length+2)
-	var (
-		n        int
-		currentN int
-	)
-	for n < length {
-		currentN, err = reader.Read(line[n:])
-		if err != nil {
-			return
-		}
-		n += currentN
+	n, err := reader.Read(line)
+	if err != nil {
+		return
 	}
+
+	if n != len(line) {
+		return nil, io.EOF
+	}
+
 	if !bytes.HasSuffix(line, crlf) {
 		err = ErrFormat
 		return

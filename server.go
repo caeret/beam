@@ -2,7 +2,6 @@ package beam
 
 import (
 	"errors"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -75,7 +74,9 @@ func (s *Server) Serve(addr string) error {
 		sleep = time.Second
 
 		s.wg.Add(1)
-		go protectCall(func() { s.handleConn(NewConn(conn)) }, s.logger)
+		go protectCall(s.createClient(conn, 16*1024, func() {
+			s.wg.Done()
+		}).run, s.logger)
 	}
 
 	s.wg.Wait()
@@ -99,91 +100,16 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) handleConn(conn *Conn) {
-	defer s.wg.Done()
-
-	s.logger.Debug("handle new connection from %s.", conn.RemoteAddr())
-
-	defer func() {
-		s.logger.Debug("close connection from %s.", conn.RemoteAddr())
-		err := conn.Close()
-		if err != nil {
-			s.logger.Warning("there is an error when close the connection from %s.", conn.RemoteAddr())
-		}
-	}()
-
-	var shouldReturn bool
-	conn.refreshDeadline(s.config.IdleTimeout)
-	for {
-		if s.closed() {
-			return
-		}
-		if !conn.beforeDeadline() {
-			s.logger.Debug("deadline exceeded from %s.", conn.RemoteAddr())
-			return
-		}
-		err := conn.SetReadDeadline(time.Now().Add(s.config.RWTimeout))
-		if err != nil {
-			s.logger.Error("fail to set read deadline: %s.", err.Error())
-			return
-		}
-
-		req, err := ReadRequest(conn)
-		if err != nil {
-			if err == io.EOF {
-				s.logger.Debug("receive EOF from %s.", conn.RemoteAddr())
-				return
-			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				s.logger.Debug("read timeout from %s.", conn.RemoteAddr())
-				continue
-			}
-			s.logger.Error("fail to read request: %s.", err.Error())
-			return
-		}
-
-		conn.refreshDeadline(s.config.IdleTimeout)
-
-		s.logger.Debug("read request: \"%s\".", req)
-
-		var resp Response
-
-		if s.handler != nil {
-			resp, err = s.handler.Handle(req)
-			if err != nil {
-				shouldReturn = true
-				resp = NewErrorsResponse("Error internal error")
-				s.logger.Error("fail to handle request: %s", err.Error())
-			}
-		} else {
-			shouldReturn = true
-			resp = NewErrorsResponse("Error the Handler should be provided")
-		}
-
-		s.logger.Debug("send response: \"%s\".", resp)
-
-		err = conn.SetWriteDeadline(time.Now().Add(s.config.RWTimeout))
-		if err != nil {
-			if err == io.EOF {
-				s.logger.Debug("receive EOF from %s.", conn.RemoteAddr())
-				return
-			}
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				s.logger.Warning("write timeout from %s.", conn.RemoteAddr())
-				return
-			}
-			s.logger.Error("fail to set write deadline: %s.", err.Error())
-			return
-		}
-
-		_, err = conn.Write(resp)
-		if err != nil {
-			shouldReturn = true
-			s.logger.Error("fail to write response: %s.", err.Error())
-		}
-
-		if shouldReturn {
-			return
-		}
-	}
+func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func()) *client {
+	c := new(client)
+	c.logger = s.logger
+	c.conn = conn
+	c.b = make([]byte, bufferSize)
+	c.bsize = bufferSize
+	c.rwTimeout = s.config.RWTimeout
+	c.idleTimeout = s.config.IdleTimeout
+	c.handler = s.config.Handler
+	c.closeFun = closeFunc
+	c.closeCh = s.closeCh
+	return c
 }

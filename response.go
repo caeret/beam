@@ -3,6 +3,7 @@ package beam
 import (
 	"bytes"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -12,6 +13,20 @@ const (
 	BulkStringsResponsePrefix   = '$'
 	ArraysResponsePrefix        = '*'
 )
+
+type Responses []Response
+
+func (rs Responses) String() string {
+	return escapeCrlf(rs.Raw())
+}
+
+func (rs Responses) Raw() string {
+	strs := make([]string, len(rs))
+	for i, resp := range rs {
+		strs[i] = resp.Raw()
+	}
+	return strings.Join(strs, "")
+}
 
 // Response represents the redis response.
 type Response []byte
