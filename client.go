@@ -8,34 +8,59 @@ import (
 	"github.com/gaemma/logging"
 )
 
-// Conn contains the client connection and deadline for closing.
-type client struct {
+// NewClientRequest creates a new ClientRequest with the given Client and Request.
+func NewClientRequest(client *Client, request Request) *ClientRequest {
+	cr := new(ClientRequest)
+	cr.Client = client
+	cr.Request = request
+	return cr
+}
+
+// ClientRequest links the Request with the Client.
+type ClientRequest struct {
+	*Client
+	Request
+}
+
+// ClientStats contains the statistics data.
+type ClientStats struct {
+	BytesIn  int
+	BytesOut int
+	Commands int
+}
+
+// Client contains the client connection and deadline for closing.
+type Client struct {
 	logger      logging.Logger
 	conn        net.Conn
 	deadline    time.Time
 	b           []byte
 	bsize       int
 	boff        int
-	bytesIn     int
-	bytesOut    int
 	rwTimeout   time.Duration
 	idleTimeout time.Duration
 	handler     Handler
 	closeFun    func()
 	closeCh     <-chan struct{}
+	stats       *ClientStats
+}
+
+// Stats retrieves the ClientStats value.
+func (c *Client) Stats() ClientStats {
+	return *c.stats
 }
 
 // refreshDeadline sets the deadline with the current time and the given duration d.
-func (c *client) refreshDeadline(d time.Duration) {
+func (c *Client) refreshDeadline(d time.Duration) {
 	c.deadline = time.Now().Add(d)
 }
 
 // beforeDeadline checks if the connection before the deadline.
-func (c *client) beforeDeadline() bool {
+func (c *Client) beforeDeadline() bool {
 	return time.Now().Before(c.deadline)
 }
 
-func (c *client) run() {
+func (c *Client) run() {
 	if c.closeFun != nil {
 		defer c.closeFun()
 	}
@@ -83,7 +108,7 @@ func (c *client) run() {
 			return
 		}
 
-		c.bytesIn += nr
+		c.stats.BytesIn += nr
 
 		var reqs Requests
 		l := c.b[:c.boff+nr]
@@ -102,6 +127,7 @@ func (c *client) run() {
 			reqs = append(reqs, req)
 		}
 
+		c.stats.Commands += len(reqs)
 		c.refreshDeadline(c.idleTimeout)
 
 		c.logger.Debug("read %d requests: \"%s\".", len(reqs), reqs)
@@ -112,7 +138,7 @@ func (c *client) run() {
 			var resp Response
 
 			if c.handler != nil {
-				resp, err = c.handler.Handle(req)
+				resp, err = c.handler.Handle(NewClientRequest(c, req))
 				if err != nil {
 					shouldReturn = true
 					resp = NewErrorsResponse("Error internal error")
@@ -147,7 +173,7 @@ func (c *client) run() {
 			shouldReturn = true
 			c.logger.Error("fail to write response: %s.", err.Error())
 		}
-		c.bytesOut += nw
+		c.stats.BytesOut += nw
 
 		if shouldReturn {
 			return

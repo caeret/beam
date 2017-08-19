@@ -12,6 +12,22 @@ var (
 	ErrFormat = errors.New("invalid format")
 )
 
+// Requests is a Request list.
+type Requests []Request
+
+func (rs Requests) String() string {
+	return escapeCrlf(rs.Raw())
+}
+
+// Raw formats the request to redis binary protocol.
+func (rs Requests) Raw() string {
+	strs := make([]string, len(rs))
+	for i, req := range rs {
+		strs[i] = req.Raw()
+	}
+	return strings.Join(strs, "")
+}
+
 // NewRequest creates new request from string arguments.
 func NewRequest(args ...string) Request {
 	req := make(Request, len(args))
@@ -21,27 +37,27 @@ func NewRequest(args ...string) Request {
 	return req
 }
 
-type Requests []Request
-
-func (rs Requests) String() string {
-	return escapeCrlf(rs.Raw())
-}
-
-func (rs Requests) Raw() string {
-	strs := make([]string, len(rs))
-	for i, req := range rs {
-		strs[i] = req.Raw()
-	}
-	return strings.Join(strs, "")
-}
-
 // Request represents the redis request command.
 type Request [][]byte
+
+// Get retrieves the arg bytes with the given index.
+func (r Request) Get(index int) []byte {
+	if index < len(r) {
+		return r[index]
+	}
+	return nil
+}
+
+// GetStr retrieves the arg string with the given index.
+func (r Request) GetStr(index int) string {
+	return string(r.Get(index))
+}
 
 func (r Request) String() string {
 	return escapeCrlf(r.Raw())
 }
 
+// Raw formats the request to redis binary protocol.
 func (r Request) Raw() string {
 	raw := "*" + strconv.Itoa(len(r)) + string(crlf)
 	for _, elem := range r {
@@ -51,6 +67,8 @@ func (r Request) Raw() string {
 	return raw
 }
 
+// ReadRequest parses a Request from b, and the left bytes l will be returned.
+// ErrFormat will be returned if there is invalid protocol sequence.
 func ReadRequest(b []byte) (request Request, l []byte, err error) {
 	defer func() {
 		if err != nil && err == io.EOF {

@@ -14,12 +14,14 @@ const (
 	ArraysResponsePrefix        = '*'
 )
 
+// Responses is a Response list.
 type Responses []Response
 
 func (rs Responses) String() string {
 	return escapeCrlf(rs.Raw())
 }
 
+// Raw formats the response to redis binary protocol.
 func (rs Responses) Raw() string {
 	strs := make([]string, len(rs))
 	for i, resp := range rs {
@@ -35,6 +37,7 @@ func (r Response) String() string {
 	return escapeCrlf(r.Raw())
 }
 
+// Raw formats the response to redis binary protocol.
 func (r Response) Raw() string {
 	return string(r)
 }

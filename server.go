@@ -9,6 +9,7 @@ import (
 	"github.com/gaemma/logging"
 )
 
+// ErrServerClosed will be returned when beam server is closed.
 var ErrServerClosed = errors.New("beam: Server closed")
 
 // NewServer creates a redis protocol supported server.
@@ -100,8 +101,8 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func()) *client {
-	c := new(client)
+func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func()) *Client {
+	c := new(Client)
 	c.logger = s.logger
 	c.conn = conn
 	c.b = make([]byte, bufferSize)
@@ -111,5 +112,6 @@ func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func()) *
 	c.handler = s.config.Handler
 	c.closeFun = closeFunc
 	c.closeCh = s.closeCh
+	c.stats = new(ClientStats)
 	return c
 }
