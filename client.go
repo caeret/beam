@@ -8,18 +8,18 @@ import (
 	"github.com/gaemma/logging"
 )
 
-// NewClientRequest creates a new ClientRequest with the given Client and Request.
-func NewClientRequest(client *Client, request Request) *ClientRequest {
-	cr := new(ClientRequest)
-	cr.Client = client
-	cr.Request = request
-	return cr
+// NewRequest creates a new Request with the given Client and Request.
+func NewRequest(client *Client, cmd Command) *Request {
+	req := new(Request)
+	req.Client = client
+	req.Command = cmd
+	return req
 }
 
-// ClientRequest links the Request with the Client.
-type ClientRequest struct {
+// Request links the Request with the Client.
+type Request struct {
 	*Client
-	Request
+	Command
 }
 
 // ClientStats contains the statistics data.
@@ -40,7 +40,7 @@ type Client struct {
 	rwTimeout   time.Duration
 	idleTimeout time.Duration
 	handler     Handler
-	closeFun    func()
+	closeFun    func(c *Client)
 	closeCh     <-chan struct{}
 	stats       *ClientStats
 }
@@ -62,7 +62,7 @@ func (c *Client) beforeDeadline() bool {
 
 func (c *Client) run() {
 	if c.closeFun != nil {
-		defer c.closeFun()
+		defer c.closeFun(c)
 	}
 
 	c.logger.Debug("handle new connection from %s.", c.conn.RemoteAddr())
@@ -110,11 +110,11 @@ func (c *Client) run() {
 
 		c.stats.BytesIn += nr
 
-		var reqs Requests
+		var cmds Commands
 		l := c.b[:c.boff+nr]
 		for {
-			var req Request
-			req, l, err = ReadRequest(l)
+			var cmd Command
+			cmd, l, err = ReadCommand(l)
 			if err != nil {
 				if err == io.EOF {
 					copy(c.b, l)
@@ -124,21 +124,21 @@ func (c *Client) run() {
 				c.logger.Error("fail to read request: %s.", err.Error())
 				return
 			}
-			reqs = append(reqs, req)
+			cmds = append(cmds, cmd)
 		}
 
-		c.stats.Commands += len(reqs)
+		c.stats.Commands += len(cmds)
 		c.refreshDeadline(c.idleTimeout)
 
-		c.logger.Debug("read %d requests: \"%s\".", len(reqs), reqs)
+		c.logger.Debug("read %d requests: \"%s\".", len(cmds), cmds)
 
 		var resps Responses
 
-		for _, req := range reqs {
+		for _, cmd := range cmds {
 			var resp Response
 
 			if c.handler != nil {
-				resp, err = c.handler.Handle(NewClientRequest(c, req))
+				resp, err = c.handler.Handle(NewRequest(c, cmd))
 				if err != nil {
 					shouldReturn = true
 					resp = NewErrorsResponse("Error internal error")

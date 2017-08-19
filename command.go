@@ -12,64 +12,64 @@ var (
 	ErrFormat = errors.New("invalid format")
 )
 
-// Requests is a Request list.
-type Requests []Request
+// Commands is a Command list.
+type Commands []Command
 
-func (rs Requests) String() string {
-	return escapeCrlf(rs.Raw())
+func (cs Commands) String() string {
+	return escapeCrlf(cs.Raw())
 }
 
-// Raw formats the request to redis binary protocol.
-func (rs Requests) Raw() string {
-	strs := make([]string, len(rs))
-	for i, req := range rs {
+// Raw formats the Command to redis binary protocol.
+func (cs Commands) Raw() string {
+	strs := make([]string, len(cs))
+	for i, req := range cs {
 		strs[i] = req.Raw()
 	}
 	return strings.Join(strs, "")
 }
 
-// NewRequest creates new request from string arguments.
-func NewRequest(args ...string) Request {
-	req := make(Request, len(args))
+// NewCommand creates new Command from string arguments.
+func NewCommand(args ...string) Command {
+	cmd := make(Command, len(args))
 	for i, arg := range args {
-		req[i] = []byte(arg)
+		cmd[i] = []byte(arg)
 	}
-	return req
+	return cmd
 }
 
-// Request represents the redis request command.
-type Request [][]byte
+// Command represents the redis Command command.
+type Command [][]byte
 
 // Get retrieves the arg bytes with the given index.
-func (r Request) Get(index int) []byte {
-	if index < len(r) {
-		return r[index]
+func (cmd Command) Get(index int) []byte {
+	if index < len(cmd) {
+		return cmd[index]
 	}
 	return nil
 }
 
 // GetStr retrieves the arg string with the given index.
-func (r Request) GetStr(index int) string {
-	return string(r.Get(index))
+func (cmd Command) GetStr(index int) string {
+	return string(cmd.Get(index))
 }
 
-func (r Request) String() string {
-	return escapeCrlf(r.Raw())
+func (cmd Command) String() string {
+	return escapeCrlf(cmd.Raw())
 }
 
-// Raw formats the request to redis binary protocol.
-func (r Request) Raw() string {
-	raw := "*" + strconv.Itoa(len(r)) + string(crlf)
-	for _, elem := range r {
+// Raw formats the Command to redis binary protocol.
+func (cmd Command) Raw() string {
+	raw := "*" + strconv.Itoa(len(cmd)) + string(crlf)
+	for _, elem := range cmd {
 		raw += "$" + strconv.Itoa(len(elem)) + string(crlf)
 		raw += string(elem) + string(crlf)
 	}
 	return raw
 }
 
-// ReadRequest parses a Request from b, and the left bytes l will be returned.
+// ReadCommand parses a Command from b, and the left bytes l will be returned.
 // ErrFormat will be returned if there is invalid protocol sequence.
-func ReadRequest(b []byte) (request Request, l []byte, err error) {
+func ReadCommand(b []byte) (cmd Command, l []byte, err error) {
 	defer func() {
 		if err != nil && err == io.EOF {
 			l = b
@@ -81,7 +81,7 @@ func ReadRequest(b []byte) (request Request, l []byte, err error) {
 		return
 	}
 
-	request = make(Request, 0, cnt)
+	cmd = make(Command, 0, cnt)
 
 	for i := 0; i < cnt; i++ {
 		var argLength int
@@ -95,7 +95,7 @@ func ReadRequest(b []byte) (request Request, l []byte, err error) {
 			return
 		}
 
-		request = append(request, arg)
+		cmd = append(cmd, arg)
 	}
 
 	buff := new(bytes.Buffer)

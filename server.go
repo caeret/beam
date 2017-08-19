@@ -29,17 +29,20 @@ func NewServer(config Config) *Server {
 	}
 	s.handler = config.Handler
 	s.closeCh = make(chan struct{})
+	s.clients = make(map[string]*Client)
 	return s
 }
 
 // Server is a redis protocol supported engine.
 type Server struct {
-	config   Config
-	logger   logging.Logger
-	handler  Handler
-	listener net.Listener
-	wg       sync.WaitGroup
-	closeCh  chan struct{}
+	config      Config
+	logger      logging.Logger
+	handler     Handler
+	listener    net.Listener
+	wg          sync.WaitGroup
+	closeCh     chan struct{}
+	clients     map[string]*Client
+	clientMutex sync.RWMutex
 }
 
 // Serve runs the server engine on the given addr.
@@ -75,9 +78,16 @@ func (s *Server) Serve(addr string) error {
 		sleep = time.Second
 
 		s.wg.Add(1)
-		go protectCall(s.createClient(conn, 16*1024, func() {
+		client := s.createClient(conn, 16*1024, func(c *Client) {
 			s.wg.Done()
-		}).run, s.logger)
+			s.clientMutex.Lock()
+			delete(s.clients, c.conn.RemoteAddr().String())
+			s.clientMutex.Unlock()
+		})
+		s.clientMutex.Lock()
+		s.clients[conn.RemoteAddr().String()] = client
+		s.clientMutex.Unlock()
+		go protectCall(client.run, s.logger)
 	}
 
 	s.wg.Wait()
@@ -101,7 +111,7 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func()) *Client {
+func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func(c *Client)) *Client {
 	c := new(Client)
 	c.logger = s.logger
 	c.conn = conn
