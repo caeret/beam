@@ -4,9 +4,9 @@ import (
 	"io"
 	"net"
 	"time"
-
-	"github.com/gaemma/logging"
 )
+
+type closeFunc func(c *Client)
 
 // NewRequest creates a new Request with the given Client and Request.
 func NewRequest(client *Client, cmd Command) *Request {
@@ -31,18 +31,15 @@ type ClientStats struct {
 
 // Client contains the client connection and deadline for closing.
 type Client struct {
-	logger      logging.Logger
-	conn        net.Conn
-	deadline    time.Time
-	b           []byte
-	bsize       int
-	boff        int
-	rwTimeout   time.Duration
-	idleTimeout time.Duration
-	handler     Handler
-	closeFun    func(c *Client)
-	closeCh     <-chan struct{}
-	stats       *ClientStats
+	s         *Server
+	conn      net.Conn
+	deadline  time.Time
+	b         []byte
+	bsize     int
+	boff      int
+	closeFunc closeFunc
+	stats     *ClientStats
+	closeCh   chan struct{}
 }
 
 // Stats retrieves the ClientStats value.
@@ -61,50 +58,52 @@ func (c *Client) beforeDeadline() bool {
 }
 
 func (c *Client) run() {
-	if c.closeFun != nil {
-		defer c.closeFun(c)
+	if c.closeFunc != nil {
+		defer c.closeFunc(c)
 	}
 
-	c.logger.Debug("handle new connection from %s.", c.conn.RemoteAddr())
+	c.s.logger.Debug("handle new connection from %s.", c.conn.RemoteAddr())
 
 	defer func() {
-		c.logger.Debug("close connection from %s.", c.conn.RemoteAddr())
+		c.s.logger.Debug("close connection from %s.", c.conn.RemoteAddr())
 		err := c.conn.Close()
 		if err != nil {
-			c.logger.Warning("there is an error when close the connection from %s.", c.conn.RemoteAddr())
+			c.s.logger.Warning("there is an error when close the connection from %s.", c.conn.RemoteAddr())
 		}
 	}()
 
 	var shouldReturn bool
-	c.refreshDeadline(c.idleTimeout)
+	c.refreshDeadline(c.s.config.IdleTimeout)
 
 	for {
 		select {
+		case <-c.s.closeCh:
+			return
 		case <-c.closeCh:
 			return
 		default:
 		}
 		if !c.beforeDeadline() {
-			c.logger.Debug("deadline exceeded from %s.", c.conn.RemoteAddr())
+			c.s.logger.Debug("deadline exceeded from %s.", c.conn.RemoteAddr())
 			return
 		}
-		err := c.conn.SetReadDeadline(time.Now().Add(c.rwTimeout))
+		err := c.conn.SetReadDeadline(time.Now().Add(c.s.config.RWTimeout))
 		if err != nil {
-			c.logger.Error("fail to set read deadline: %s.", err.Error())
+			c.s.logger.Error("fail to set read deadline: %s.", err.Error())
 			return
 		}
 
 		nr, err := c.conn.Read(c.b[c.boff:])
 		if err != nil {
 			if err == io.EOF {
-				c.logger.Debug("receive EOF from %s.", c.conn.RemoteAddr())
+				c.s.logger.Debug("receive EOF from %s.", c.conn.RemoteAddr())
 				return
 			}
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				c.logger.Debug("read timeout from %s.", c.conn.RemoteAddr())
+				c.s.logger.Debug("read timeout from %s.", c.conn.RemoteAddr())
 				continue
 			}
-			c.logger.Error("fail to read request: %s.", err.Error())
+			c.s.logger.Error("fail to read request: %s.", err.Error())
 			return
 		}
 
@@ -121,62 +120,71 @@ func (c *Client) run() {
 					c.boff = len(l)
 					break
 				}
-				c.logger.Error("fail to read request: %s.", err.Error())
+				c.s.logger.Error("fail to read request: %s.", err.Error())
 				return
 			}
 			cmds = append(cmds, cmd)
 		}
 
 		c.stats.Commands += len(cmds)
-		c.refreshDeadline(c.idleTimeout)
+		c.refreshDeadline(c.s.config.IdleTimeout)
 
-		c.logger.Debug("read %d requests: \"%s\".", len(cmds), cmds)
+		c.s.logger.Debug("read %d requests: \"%s\".", len(cmds), cmds)
 
-		var resps Responses
+		var replies Replies
 
 		for _, cmd := range cmds {
-			var resp Response
+			var reply Reply
 
-			if c.handler != nil {
-				resp, err = c.handler.Handle(NewRequest(c, cmd))
+			if c.s.handler != nil {
+				reply, err = c.s.handler.Handle(NewRequest(c, cmd))
 				if err != nil {
 					shouldReturn = true
-					resp = NewErrorsResponse("Error internal error")
-					c.logger.Error("fail to handle request: %s", err.Error())
+					reply = NewErrorsReply("Error internal error")
+					c.s.logger.Error("fail to handle request: %s", err.Error())
 				}
 			} else {
 				shouldReturn = true
-				resp = NewErrorsResponse("Error the Handler should be provided")
+				reply = NewErrorsReply("Error the Handler should be provided")
 			}
 
-			resps = append(resps, resp)
+			replies = append(replies, reply)
 		}
 
-		c.logger.Debug("send %d responses: \"%s\".", len(resps), resps)
+		c.s.logger.Debug("send %d responses: \"%s\".", len(replies), replies)
 
-		err = c.conn.SetWriteDeadline(time.Now().Add(c.rwTimeout))
+		err = c.conn.SetWriteDeadline(time.Now().Add(c.s.config.RWTimeout))
 		if err != nil {
 			if err == io.EOF {
-				c.logger.Debug("receive EOF from %s.", c.conn.RemoteAddr())
+				c.s.logger.Debug("receive EOF from %s.", c.conn.RemoteAddr())
 				return
 			}
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				c.logger.Warning("write timeout from %s.", c.conn.RemoteAddr())
+				c.s.logger.Warning("write timeout from %s.", c.conn.RemoteAddr())
 				return
 			}
-			c.logger.Error("fail to set write deadline: %s.", err.Error())
+			c.s.logger.Error("fail to set write deadline: %s.", err.Error())
 			return
 		}
 
-		nw, err := c.conn.Write([]byte(resps.Raw()))
+		nw, err := c.conn.Write([]byte(replies.Raw()))
 		if err != nil {
 			shouldReturn = true
-			c.logger.Error("fail to write response: %s.", err.Error())
+			c.s.logger.Error("fail to write response: %s.", err.Error())
 		}
 		c.stats.BytesOut += nw
 
 		if shouldReturn {
 			return
 		}
+	}
+}
+
+func (c *Client) stop() {
+	select {
+	case <-c.closeCh:
+		c.s.logger.Debug("client is already closed: %s.", c.conn.RemoteAddr)
+	default:
+		c.closeCh <- struct{}{}
 	}
 }

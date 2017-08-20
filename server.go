@@ -9,6 +9,8 @@ import (
 	"github.com/gaemma/logging"
 )
 
+const defaultBufferSize = 16 * 1024
+
 // ErrServerClosed will be returned when beam server is closed.
 var ErrServerClosed = errors.New("beam: Server closed")
 
@@ -20,6 +22,9 @@ func NewServer(config Config) *Server {
 	}
 	if config.IdleTimeout <= 0 {
 		config.IdleTimeout = time.Minute * 5
+	}
+	if config.BufferSize <= 0 {
+		config.BufferSize = defaultBufferSize
 	}
 	s.config = config
 	if config.Logger == nil {
@@ -35,17 +40,17 @@ func NewServer(config Config) *Server {
 
 // Server is a redis protocol supported engine.
 type Server struct {
-	config      Config
-	logger      logging.Logger
-	handler     Handler
-	listener    net.Listener
-	wg          sync.WaitGroup
-	closeCh     chan struct{}
-	clients     map[string]*Client
-	clientMutex sync.RWMutex
+	config       Config
+	logger       logging.Logger
+	handler      Handler
+	listener     net.Listener
+	clientsWait  sync.WaitGroup
+	closeCh      chan struct{}
+	clients      map[string]*Client
+	clientsMutex sync.RWMutex
 }
 
-// Serve runs the server engine on the given addr.
+// Serve runs the server engine on the given addr. if beam server is closed, ErrServerClosed will be retuend.
 func (s *Server) Serve(addr string) error {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -77,29 +82,34 @@ func (s *Server) Serve(addr string) error {
 		}
 		sleep = time.Second
 
-		s.wg.Add(1)
-		client := s.createClient(conn, 16*1024, func(c *Client) {
-			s.wg.Done()
-			s.clientMutex.Lock()
+		s.clientsWait.Add(1)
+		client := s.createClient(conn, s.config.BufferSize, func(c *Client) {
+			s.clientsWait.Done()
+			s.clientsMutex.Lock()
 			delete(s.clients, c.conn.RemoteAddr().String())
-			s.clientMutex.Unlock()
+			s.clientsMutex.Unlock()
 		})
-		s.clientMutex.Lock()
+		s.clientsMutex.Lock()
 		s.clients[conn.RemoteAddr().String()] = client
-		s.clientMutex.Unlock()
+		s.clientsMutex.Unlock()
 		go protectCall(client.run, s.logger)
 	}
 
-	s.wg.Wait()
+	s.clientsWait.Wait()
 	return err
 }
 
-// Stop stops the running server.
-func (s *Server) Stop() error {
-	s.logger.Info("server is closed.")
-	close(s.closeCh)
-	err := s.listener.Close()
-	return err
+// Close stops the running server.
+func (s *Server) Close() error {
+	select {
+	case <-s.closeCh:
+		return nil
+	default:
+		s.logger.Info("server is closed.")
+		close(s.closeCh)
+		err := s.listener.Close()
+		return err
+	}
 }
 
 func (s *Server) closed() bool {
@@ -111,17 +121,13 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc func(c *Client)) *Client {
+func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc closeFunc) *Client {
 	c := new(Client)
-	c.logger = s.logger
+	c.s = s
 	c.conn = conn
 	c.b = make([]byte, bufferSize)
 	c.bsize = bufferSize
-	c.rwTimeout = s.config.RWTimeout
-	c.idleTimeout = s.config.IdleTimeout
-	c.handler = s.config.Handler
-	c.closeFun = closeFunc
-	c.closeCh = s.closeCh
+	c.closeFunc = closeFunc
 	c.stats = new(ClientStats)
 	return c
 }

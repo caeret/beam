@@ -12,4 +12,5 @@ type Config struct {
 	Handler     Handler
 	RWTimeout   time.Duration
 	IdleTimeout time.Duration
+	BufferSize  int
 }
