@@ -57,6 +57,11 @@ func (cmd Command) String() string {
 	return escapeCrlf(cmd.Raw())
 }
 
+// Len retrieves the length of the command.
+func (cmd Command) Len() int {
+	return len(cmd)
+}
+
 // Raw formats the Command to redis binary protocol.
 func (cmd Command) Raw() string {
 	raw := "*" + strconv.Itoa(len(cmd)) + string(crlf)
