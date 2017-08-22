@@ -1,9 +1,14 @@
 package beam
 
 import (
+	"errors"
 	"io"
 	"net"
 	"time"
+)
+
+var (
+	ErrHaltClient = errors.New("halt client")
 )
 
 type closeFunc func(c *Client)
@@ -139,12 +144,15 @@ func (c *Client) run() {
 			if c.s.handler != nil {
 				reply, err = c.s.handler.Handle(NewRequest(c, cmd))
 				if err != nil {
-					shouldReturn = true
-					reply = NewErrorsReply("Error internal error")
-					c.s.logger.Error("fail to handle request: %s", err.Error())
+					if err == ErrHaltClient {
+						shouldReturn = true
+						reply = NewErrorsReply("Error halt client")
+					} else {
+						reply = NewErrorsReply("Error internal server error")
+						c.s.logger.Error("fail to handle request: %s", err.Error())
+					}
 				}
 			} else {
-				shouldReturn = true
 				reply = NewErrorsReply("Error the Handler should be provided")
 			}
 
