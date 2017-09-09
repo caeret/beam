@@ -82,21 +82,27 @@ func (s *Server) Serve(addr string) error {
 		}
 		sleep = time.Second
 
-		s.clientsWait.Add(1)
-		client := s.createClient(conn, s.config.BufferSize, func(c *Client) {
-			s.clientsWait.Done()
-			s.clientsMutex.Lock()
-			delete(s.clients, c.conn.RemoteAddr().String())
-			s.clientsMutex.Unlock()
-		})
-		s.clientsMutex.Lock()
-		s.clients[conn.RemoteAddr().String()] = client
-		s.clientsMutex.Unlock()
-		go protectCall(client.run, s.logger)
+		client := s.createClient(conn, s.config.BufferSize)
+		s.startClient(client)
 	}
 
 	s.clientsWait.Wait()
 	return err
+}
+
+func (s *Server) startClient(client *Client) {
+	s.clientsWait.Add(1)
+	s.clientsMutex.Lock()
+	s.clients[client.conn.RemoteAddr().String()] = client
+	s.clientsMutex.Unlock()
+	go protectCall(client.run, s.logger)
+}
+
+func (s *Server) stopClient(client *Client) {
+	s.clientsWait.Done()
+	s.clientsMutex.Lock()
+	delete(s.clients, client.conn.RemoteAddr().String())
+	s.clientsMutex.Unlock()
 }
 
 // Close stops the running server.
@@ -121,13 +127,13 @@ func (s *Server) closed() bool {
 	}
 }
 
-func (s *Server) createClient(conn net.Conn, bufferSize int, closeFunc closeFunc) *Client {
+func (s *Server) createClient(conn net.Conn, bufferSize int) *Client {
 	c := new(Client)
 	c.s = s
 	c.conn = conn
 	c.b = make([]byte, bufferSize)
 	c.bsize = bufferSize
-	c.closeFunc = closeFunc
 	c.stats = new(ClientStats)
+	c.attributes = make(map[string]interface{})
 	return c
 }

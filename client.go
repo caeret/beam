@@ -11,8 +11,6 @@ var (
 	ErrHaltClient = errors.New("halt client")
 )
 
-type closeFunc func(c *Client)
-
 // NewRequest creates a new Request with the given Client and Request.
 func NewRequest(client *Client, cmd Command) *Request {
 	req := new(Request)
@@ -36,15 +34,28 @@ type ClientStats struct {
 
 // Client contains the client connection and deadline for closing.
 type Client struct {
-	s         *Server
-	conn      net.Conn
-	deadline  time.Time
-	b         []byte
-	bsize     int
-	boff      int
-	closeFunc closeFunc
-	stats     *ClientStats
-	closeCh   chan struct{}
+	s          *Server
+	conn       net.Conn
+	deadline   time.Time
+	b          []byte
+	bsize      int
+	boff       int
+	stats      *ClientStats
+	closeCh    chan struct{}
+	attributes map[string]interface{}
+}
+
+func (c *Client) GetAttr(key string) interface{} {
+	return c.attributes[key]
+}
+
+func (c *Client) SetAttr(key string, value interface{}) {
+	c.attributes[key] = value
+}
+
+func (c *Client) HasAttr(key string) bool {
+	_, exist := c.attributes[key]
+	return exist
 }
 
 // Stats retrieves the ClientStats value.
@@ -63,9 +74,7 @@ func (c *Client) beforeDeadline() bool {
 }
 
 func (c *Client) run() {
-	if c.closeFunc != nil {
-		defer c.closeFunc(c)
-	}
+	defer c.s.stopClient(c)
 
 	c.s.logger.Debug("handle new connection from %s.", c.conn.RemoteAddr())
 
@@ -146,7 +155,7 @@ func (c *Client) run() {
 				if err != nil {
 					if err == ErrHaltClient {
 						shouldReturn = true
-						reply = NewErrorsReply("Error halt client")
+						reply = NewErrorsReply("Error connection is closed by the server")
 					} else {
 						reply = NewErrorsReply("Error internal server error")
 						c.s.logger.Error("fail to handle request: %s", err.Error())
