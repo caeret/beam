@@ -15,7 +15,10 @@ const defaultBufferSize = 16 * 1024
 var ErrServerClosed = errors.New("beam: Server closed")
 
 // NewServer creates a redis protocol supported server.
-func NewServer(config Config) *Server {
+func NewServer(handler Handler, config Config) *Server {
+	if handler == nil {
+		panic(errors.New("a handler should be provided"))
+	}
 	if config.RWTimeout <= 0 {
 		config.RWTimeout = time.Second * 5
 	}
@@ -26,13 +29,13 @@ func NewServer(config Config) *Server {
 		config.BufferSize = defaultBufferSize
 	}
 	s := new(Server)
+	s.handler = handler
 	s.config = config
 	if config.Logger == nil {
 		s.logger = logging.NewNopLogger()
 	} else {
 		s.logger = config.Logger
 	}
-	s.handler = config.Handler
 	s.closeCh = make(chan struct{})
 	s.clients = make(map[string]*Client)
 	return s

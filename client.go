@@ -150,19 +150,15 @@ func (c *Client) run() {
 		for _, cmd := range cmds {
 			var reply Reply
 
-			if c.s.handler != nil {
-				reply, err = c.s.handler.Handle(NewRequest(c, cmd))
-				if err != nil {
-					if err == ErrHaltClient {
-						shouldReturn = true
-						reply = NewErrorsReply("ERR connection is closed by the server")
-					} else {
-						reply = NewErrorsReply("ERR internal server error")
-						c.s.logger.Error("fail to handle request: %s", err.Error())
-					}
+			reply, err = c.s.handler.Handle(NewRequest(c, cmd))
+			if err != nil {
+				if err == ErrHaltClient {
+					shouldReturn = true
+					reply = NewErrorsReply("ERR connection is closed by the server")
+				} else {
+					reply = NewErrorsReply("ERR internal server error")
+					c.s.logger.Error("fail to handle request: %s", err.Error())
 				}
-			} else {
-				reply = NewErrorsReply("ERR a request handler should be provided")
 			}
 
 			replies = append(replies, reply)
