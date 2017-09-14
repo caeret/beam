@@ -16,7 +16,6 @@ var ErrServerClosed = errors.New("beam: Server closed")
 
 // NewServer creates a redis protocol supported server.
 func NewServer(config Config) *Server {
-	s := new(Server)
 	if config.RWTimeout <= 0 {
 		config.RWTimeout = time.Second * 5
 	}
@@ -26,6 +25,7 @@ func NewServer(config Config) *Server {
 	if config.BufferSize <= 0 {
 		config.BufferSize = defaultBufferSize
 	}
+	s := new(Server)
 	s.config = config
 	if config.Logger == nil {
 		s.logger = logging.NewNopLogger()
