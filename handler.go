@@ -2,12 +2,8 @@ package beam
 
 import (
 	"container/list"
-	"errors"
+	"fmt"
 	"strings"
-)
-
-var (
-	ErrHandlerNotFound = errors.New("handler not found")
 )
 
 type HandleFunc func(request *Request) (Reply, error)
@@ -84,5 +80,5 @@ func (mh *MappedHandler) Handle(request *Request) (Reply, error) {
 	if handler, exist := mh.handlers[command]; exist {
 		return handler.Handle(request)
 	}
-	return nil, ErrHandlerNotFound
+	return NewErrorsReply(fmt.Sprintf("ERR unknown command '%s'", command)), nil
 }

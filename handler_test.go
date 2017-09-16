@@ -36,3 +36,28 @@ func testHandlerChain(t *testing.T) {
 	assert.Nil(err)
 	assert.EqualValues([]byte("+BAR"), reply)
 }
+
+func testMappedHandler(t *testing.T) {
+	assert := assert.New(t)
+	mh := NewMappedHandler()
+	mh.SetFunc("FOO", func(request *Request) (Reply, error) {
+		return NewSimpleStringsReply("BAR"), nil
+	})
+	mh.SetFunc("BAR", func(request *Request) (Reply, error) {
+		return NewSimpleStringsReply("BAZ"), nil
+	})
+
+	req := &Request{
+		Command: Command{[]byte("FOO")},
+	}
+	reply, err := mh.Handle(req)
+	assert.Nil(err)
+	assert.EqualValues([]byte("+BAR"), reply)
+
+	req = &Request{
+		Command: Command{[]byte("BAR")},
+	}
+	reply, err = mh.Handle(req)
+	assert.Nil(err)
+	assert.EqualValues([]byte("+BAZ"), reply)
+}
