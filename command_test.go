@@ -1,7 +1,6 @@
 package beam
 
 import (
-	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,37 +9,37 @@ import (
 func TestReadCommand(t *testing.T) {
 	assert := assert.New(t)
 	var (
-		req Command
-		b   []byte
-		l   []byte
-		err error
+		cmds []Command
+		b    []byte
+		l    []byte
+		err  error
 	)
 	b = []byte("*1\r\n$4\r\nPING\r\n")
-	req, l, err = ReadCommand(b)
+	cmds, l, err = ReadCommand(b)
 	assert.Nil(err)
 	assert.Empty(l)
-	assert.Equal(req, Command{[]byte("PING")})
+	assert.Equal([]Command{{[]byte("PING")}}, cmds)
 
 	b = []byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n")
-	req, l, err = ReadCommand(b)
+	cmds, l, err = ReadCommand(b)
 	assert.Nil(err)
 	assert.Empty(l)
-	assert.Equal(Command{[]byte("GET"), []byte("foo")}, req)
+	assert.Equal([]Command{{[]byte("GET"), []byte("foo")}}, cmds)
 
 	b = []byte("*2\r\nhello")
-	req, l, err = ReadCommand(b)
+	cmds, l, err = ReadCommand(b)
 	assert.Equal(ErrFormat, err)
-	assert.Empty(l)
+	assert.Equal(b, l)
 
 	b = []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3GET\r")
-	req, l, err = ReadCommand(b)
+	cmds, l, err = ReadCommand(b)
 	assert.Nil(err)
-	assert.Equal(Command{[]byte("PING")}, req)
+	assert.Equal([]Command{{[]byte("PING")}}, cmds)
 	assert.Equal([]byte("*2\r\n$3GET\r"), l)
 
 	b = []byte("*2\r\n$3GET\r")
-	req, l, err = ReadCommand(b)
-	assert.Equal(io.EOF, err)
+	cmds, l, err = ReadCommand(b)
+	assert.Nil(err)
 	assert.Equal(b, l)
 }
 

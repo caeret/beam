@@ -72,49 +72,54 @@ func (cmd Command) Raw() string {
 	return raw
 }
 
-// ReadCommand parses a Command from b, and the left bytes l will be returned.
+// ReadCommand parses commands from b, and the left bytes l will be returned.
 // ErrFormat will be returned if there is invalid protocol sequence.
-func ReadCommand(b []byte) (cmd Command, l []byte, err error) {
+func ReadCommand(b []byte) (commands []Command, l []byte, err error) {
+	buffer := bytes.NewBuffer(b)
+	// assumes that each command needs 32 bytes.
+	commands = make([]Command, 0, len(b)/32)
+
 	defer func() {
-		if err != nil && err == io.EOF {
-			l = b
+		if err == io.EOF {
+			err = nil
 		}
 	}()
-	reader := bytes.NewBuffer(b)
-	cnt, err := readArgsCount(reader)
-	if err != nil {
-		return
-	}
 
-	cmd = make(Command, 0, cnt)
+	for err == nil {
+		l = buffer.Bytes()
 
-	for i := 0; i < cnt; i++ {
-		var argLength int
-		argLength, err = readArgLength(reader)
-		if err != nil {
-			return
-		}
-		var arg []byte
-		arg, err = readArgLine(argLength, reader)
+		var cnt int
+		cnt, err = readArgsCount(buffer)
 		if err != nil {
 			return
 		}
 
-		cmd = append(cmd, arg)
+		cmd := make(Command, 0, cnt)
+
+		for i := 0; i < cnt; i++ {
+			var argLength int
+			argLength, err = readArgLength(buffer)
+			if err != nil {
+				return
+			}
+			var arg []byte
+			arg, err = readArgLine(argLength, buffer)
+			if err != nil {
+				return
+			}
+
+			cmd = append(cmd, arg)
+		}
+
+		commands = append(commands, cmd)
 	}
 
-	buff := new(bytes.Buffer)
-	_, err = reader.WriteTo(buff)
-	if err != nil {
-		return
-	}
-	l = buff.Bytes()
 	return
 }
 
-// readArgsCount reads arguments count from reader.
-func readArgsCount(reader *bytes.Buffer) (n int, err error) {
-	argsCount, err := readPrefixedLine('*', reader)
+// readArgsCount reads arguments count from buffer.
+func readArgsCount(buffer *bytes.Buffer) (n int, err error) {
+	argsCount, err := readPrefixedLine('*', buffer)
 	if err != nil {
 		return
 	}
@@ -122,9 +127,9 @@ func readArgsCount(reader *bytes.Buffer) (n int, err error) {
 	return
 }
 
-// readArgLength reads the length of argument from reader.
-func readArgLength(reader *bytes.Buffer) (n int, err error) {
-	argLength, err := readPrefixedLine('$', reader)
+// readArgLength reads the length of argument from buffer.
+func readArgLength(buffer *bytes.Buffer) (n int, err error) {
+	argLength, err := readPrefixedLine('$', buffer)
 	if err != nil {
 		return
 	}
@@ -133,8 +138,8 @@ func readArgLength(reader *bytes.Buffer) (n int, err error) {
 }
 
 // readPrefixedLine reads the line starts by the specified prefix and ends with crlf.
-func readPrefixedLine(prefix byte, reader *bytes.Buffer) (line []byte, err error) {
-	b, err := reader.ReadByte()
+func readPrefixedLine(prefix byte, buffer *bytes.Buffer) (line []byte, err error) {
+	b, err := buffer.ReadByte()
 	if err != nil {
 		return
 	}
@@ -142,7 +147,7 @@ func readPrefixedLine(prefix byte, reader *bytes.Buffer) (line []byte, err error
 		err = ErrFormat
 		return
 	}
-	line, err = reader.ReadBytes('\n')
+	line, err = buffer.ReadBytes('\n')
 	if err != nil {
 		return
 	}
@@ -155,9 +160,9 @@ func readPrefixedLine(prefix byte, reader *bytes.Buffer) (line []byte, err error
 }
 
 // readArgLine reads the line with specified length.
-func readArgLine(length int, reader *bytes.Buffer) (line []byte, err error) {
+func readArgLine(length int, buffer *bytes.Buffer) (line []byte, err error) {
 	line = make([]byte, length+2)
-	n, err := reader.Read(line)
+	n, err := buffer.Read(line)
 	if err != nil {
 		return
 	}

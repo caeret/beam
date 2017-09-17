@@ -125,20 +125,13 @@ func (c *Client) run() {
 
 		var cmds Commands
 		l := c.b[:c.boff+nr]
-		for {
-			var cmd Command
-			cmd, l, err = ReadCommand(l)
-			if err != nil {
-				if err == io.EOF {
-					copy(c.b, l)
-					c.boff = len(l)
-					break
-				}
-				c.s.logger.Error("fail to read request: %s.", err.Error())
-				return
-			}
-			cmds = append(cmds, cmd)
+		cmds, l, err = ReadCommand(l)
+		if err != nil {
+			c.s.logger.Error("fail to read command: %s.", err.Error())
+			return
 		}
+		copy(c.b, l)
+		c.boff = len(l)
 
 		c.stats.Commands += len(cmds)
 		c.refreshDeadline(c.s.config.IdleTimeout)
