@@ -82,36 +82,87 @@ func ReadCommand(b []byte) (commands []Command, l []byte, err error) {
 	defer func() {
 		if err == io.EOF {
 			err = nil
+		} else {
+			l = nil
 		}
 	}()
 
 	for err == nil {
 		l = buffer.Bytes()
+		if len(l) == 0 {
+			err = io.EOF
+			break
+		}
 
-		var cnt int
-		cnt, err = readArgsCount(buffer)
+		var (
+			cmd   Command
+			empty bool
+		)
+
+		if l[0] == '*' {
+			cmd, err = readMultiBulkCommand(buffer)
+		} else {
+			cmd, empty, err = readInlineCommand(buffer)
+		}
+
 		if err != nil {
 			return
 		}
 
-		cmd := make(Command, 0, cnt)
-
-		for i := 0; i < cnt; i++ {
-			var argLength int
-			argLength, err = readArgLength(buffer)
-			if err != nil {
-				return
-			}
-			var arg []byte
-			arg, err = readArgLine(argLength, buffer)
-			if err != nil {
-				return
-			}
-
-			cmd = append(cmd, arg)
+		if empty {
+			continue
 		}
 
 		commands = append(commands, cmd)
+	}
+
+	return
+}
+
+func readInlineCommand(buffer *bytes.Buffer) (cmd Command, empty bool, err error) {
+	b, err := buffer.ReadBytes('\n')
+	if err != nil {
+		return
+	}
+
+	args := bytes.Split(b, []byte{' '})
+
+	for _, arg := range args {
+		arg = bytes.Trim(arg, " \r\n")
+		if len(arg) > 0 {
+			cmd = append(cmd, arg)
+		}
+	}
+
+	if len(cmd) == 0 {
+		empty = true
+	}
+
+	return
+}
+
+func readMultiBulkCommand(buffer *bytes.Buffer) (cmd Command, err error) {
+	var cnt int
+	cnt, err = readArgsCount(buffer)
+	if err != nil {
+		return
+	}
+
+	cmd = make(Command, 0, cnt)
+
+	for i := 0; i < cnt; i++ {
+		var argLength int
+		argLength, err = readArgLength(buffer)
+		if err != nil {
+			return
+		}
+		var arg []byte
+		arg, err = readArgLine(argLength, buffer)
+		if err != nil {
+			return
+		}
+
+		cmd = append(cmd, arg)
 	}
 
 	return

@@ -29,7 +29,7 @@ func TestReadCommand(t *testing.T) {
 	b = []byte("*2\r\nhello")
 	cmds, l, err = ReadCommand(b)
 	assert.Equal(ErrFormat, err)
-	assert.Equal(b, l)
+	assert.Nil(l)
 
 	b = []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3GET\r")
 	cmds, l, err = ReadCommand(b)
