@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestReadCommand(t *testing.T) {
+func TestReadInlineCommand(t *testing.T) {
 	assert := assert.New(t)
 	var (
 		cmds []Command
@@ -14,22 +14,51 @@ func TestReadCommand(t *testing.T) {
 		l    []byte
 		err  error
 	)
-	b = []byte("*1\r\n$4\r\nPING\r\n")
-	cmds, l, err = ReadCommand(b)
-	assert.Nil(err)
-	assert.Empty(l)
-	assert.Equal([]Command{{[]byte("PING")}}, cmds)
 
-	b = []byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n")
+	b = []byte("GET foo\r\nGET bar\n")
+	cmds, l, err = ReadCommand(b)
+	assert.Nil(err)
+	assert.Equal(
+		[]Command{
+			{[]byte("GET"), []byte("foo")},
+			{[]byte("GET"), []byte("bar")},
+		}, cmds)
+	assert.Empty(l)
+
+	b = []byte("GET foo\r\nGET")
+	cmds, l, err = ReadCommand(b)
+	assert.Nil(err)
+	assert.Equal(
+		[]Command{
+			{[]byte("GET"), []byte("foo")},
+		}, cmds)
+	assert.Equal([]byte("GET"), l)
+}
+
+func TestReadMultiBuckCommand(t *testing.T) {
+	assert := assert.New(t)
+	var (
+		cmds []Command
+		b    []byte
+		l    []byte
+		err  error
+	)
+
+	b = []byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n*2\r\n$3\r\nGET\r\n$3\r\nbar\r\n")
 	cmds, l, err = ReadCommand(b)
 	assert.Nil(err)
 	assert.Empty(l)
-	assert.Equal([]Command{{[]byte("GET"), []byte("foo")}}, cmds)
+	assert.Equal(
+		[]Command{
+			{[]byte("GET"), []byte("foo")},
+			{[]byte("GET"), []byte("bar")},
+		},
+		cmds)
 
 	b = []byte("*2\r\nhello")
 	cmds, l, err = ReadCommand(b)
 	assert.Equal(ErrFormat, err)
-	assert.Nil(l)
+	assert.Empty(l)
 
 	b = []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3GET\r")
 	cmds, l, err = ReadCommand(b)
