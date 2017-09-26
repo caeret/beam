@@ -39,7 +39,6 @@ type Client struct {
 	deadline   time.Time
 	b          []byte
 	bsize      int
-	boff       int
 	stats      *ClientStats
 	closeCh    chan struct{}
 	attributes map[string]interface{}
@@ -107,7 +106,12 @@ func (c *Client) run() {
 			return
 		}
 
-		nr, err := c.conn.Read(c.b[c.boff:])
+		if c.bsize >= cap(c.b) {
+			c.s.logger.Warning("too large command data.")
+			return
+		}
+
+		nr, err := c.conn.Read(c.b[c.bsize:])
 		if err != nil {
 			if err == io.EOF {
 				c.s.logger.Debug("receive EOF from %s.", c.conn.RemoteAddr())
@@ -124,14 +128,14 @@ func (c *Client) run() {
 		c.stats.BytesIn += nr
 
 		var cmds Commands
-		l := c.b[:c.boff+nr]
+		l := c.b[:c.bsize+nr]
 		cmds, l, err = ReadCommand(l)
 		if err != nil {
 			c.s.logger.Error("fail to read command: %s.", err.Error())
 			return
 		}
 		copy(c.b, l)
-		c.boff = len(l)
+		c.bsize = len(l)
 
 		c.stats.Commands += len(cmds)
 		c.refreshDeadline(c.s.config.IdleTimeout)

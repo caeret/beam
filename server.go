@@ -135,7 +135,6 @@ func (s *Server) createClient(conn net.Conn, bufferSize int) *Client {
 	c.s = s
 	c.conn = conn
 	c.b = make([]byte, bufferSize)
-	c.bsize = bufferSize
 	c.stats = new(ClientStats)
 	c.attributes = make(map[string]interface{})
 	return c
