@@ -28,6 +28,9 @@ func NewServer(handler Handler, config Config) *Server {
 	if config.BufferSize <= 0 {
 		config.BufferSize = defaultBufferSize
 	}
+	if len(config.Network) == 0 {
+		config.Network = "tcp"
+	}
 	s := new(Server)
 	s.handler = handler
 	s.config = config
@@ -54,14 +57,14 @@ type Server struct {
 }
 
 // Serve runs the server engine on the given addr. if beam server is closed, ErrServerClosed will be retuend.
-func (s *Server) Serve(addr string) error {
-	l, err := net.Listen("tcp", addr)
+func (s *Server) Serve() error {
+	l, err := net.Listen(s.config.Network, s.config.Addr)
 	if err != nil {
 		return err
 	}
 	s.listener = l
 
-	s.logger.Info("boot the beam server \"%s\".", addr)
+	s.logger.Info("boot the beam server \"%s\".", l.Addr())
 
 	sleep := time.Second
 	for {

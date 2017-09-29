@@ -12,4 +12,6 @@ type Config struct {
 	RWTimeout   time.Duration
 	IdleTimeout time.Duration
 	BufferSize  int
+	Network     string
+	Addr        string
 }
