@@ -6,17 +6,18 @@ import (
 	"strings"
 )
 
+// Handler handles the server request.
+type Handler interface {
+	Handle(request *Request) (Reply, error)
+}
+
 type HandleFunc func(request *Request) (Reply, error)
 
 func (hf HandleFunc) Handle(request *Request) (Reply, error) {
 	return hf(request)
 }
 
-// Handler handles the server request.
-type Handler interface {
-	Handle(request *Request) (Reply, error)
-}
-
+// Middleware handle the request, or to return the reply from next handler.
 type Middleware interface {
 	Do(request *Request, next Handler) (Reply, error)
 }
