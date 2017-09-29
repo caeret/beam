@@ -12,72 +12,84 @@ var (
 	ErrFormat = errors.New("invalid format")
 )
 
-// Commands is a Command list.
-type Commands []Command
+// Querys is a Query list.
+type Querys []Query
 
-func (cs Commands) String() string {
-	return escapeCrlf(cs.Raw())
+func (qs Querys) String() string {
+	return escapeCrlf(qs.Raw())
 }
 
-// Raw formats the Command to redis binary protocol.
-func (cs Commands) Raw() string {
-	strs := make([]string, len(cs))
-	for i, req := range cs {
+// Raw formats the Query to redis binary protocol.
+func (qs Querys) Raw() string {
+	strs := make([]string, len(qs))
+	for i, req := range qs {
 		strs[i] = req.Raw()
 	}
 	return strings.Join(strs, "")
 }
 
-// NewCommand creates new Command from string arguments.
-func NewCommand(args ...string) Command {
-	cmd := make(Command, len(args))
+// NewQuery creates new Query from string arguments.
+func NewQuery(directive string, args ...string) Query {
+	var query Query
+	query.Command = []byte(directive)
+	query.Arguments = make([][]byte, len(args))
 	for i, arg := range args {
-		cmd[i] = []byte(arg)
+		query.Arguments[i] = []byte(arg)
 	}
-	return cmd
+	return query
 }
 
-// Command represents the redis Command command.
-type Command [][]byte
+// Query represents the redis Query query.
+type Query struct {
+	Command   []byte
+	Arguments [][]byte
+}
 
-// Get retrieves the arg bytes with the given index.
-func (cmd Command) Get(index int) []byte {
-	if index < len(cmd) {
-		return cmd[index]
+// CommandStr return the string type of command.
+func (query Query) CommandStr() string {
+	return string(query.Command)
+}
+
+// Arg retrieves the arg bytes with the given index.
+func (query Query) Arg(index int) []byte {
+	if index < len(query.Arguments) {
+		return query.Arguments[index]
 	}
 	return nil
 }
 
-// GetStr retrieves the arg string with the given index.
-func (cmd Command) GetStr(index int) string {
-	return string(cmd.Get(index))
+// ArgStr retrieves the arg string with the given index.
+func (query Query) ArgStr(index int) string {
+	return string(query.Arg(index))
 }
 
-func (cmd Command) String() string {
-	return escapeCrlf(cmd.Raw())
+func (query Query) String() string {
+	return escapeCrlf(query.Raw())
 }
 
-// Len retrieves the length of the command.
-func (cmd Command) Len() int {
-	return len(cmd)
+// Len retrieves the arguments length of the query.
+func (query Query) Len() int {
+	return len(query.Arguments)
 }
 
-// Raw formats the Command to redis binary protocol.
-func (cmd Command) Raw() string {
-	raw := "*" + strconv.Itoa(len(cmd)) + string(crlf)
-	for _, elem := range cmd {
+// Raw formats the Query to redis binary protocol.
+func (query Query) Raw() string {
+	raw := "*" + strconv.Itoa(query.Len()+1) + string(crlf)
+	raw += "$" + strconv.Itoa(len(query.Command)) + string(crlf)
+	raw += string(query.Command) + string(crlf)
+	for _, elem := range query.Arguments {
 		raw += "$" + strconv.Itoa(len(elem)) + string(crlf)
 		raw += string(elem) + string(crlf)
 	}
 	return raw
 }
 
-// ReadCommand parses commands from b, and the left bytes l will be returned.
+// ReadQuery parses querys from b, and the left bytes l will be returned.
 // ErrFormat will be returned if there is invalid protocol sequence.
-func ReadCommand(b []byte) (commands []Command, l []byte, err error) {
+func ReadQuery(b []byte) (querys []Query, l []byte, err error) {
 	buffer := bytes.NewBuffer(b)
-	// assumes that each command needs 32 bytes.
-	commands = make([]Command, 0, len(b)/32)
+	// assumes that each query needs 32 bytes.
+	querys = make([]Query, 0, len(b)/32)
 
 	defer func() {
 		if err == io.EOF {
@@ -95,14 +107,14 @@ func ReadCommand(b []byte) (commands []Command, l []byte, err error) {
 		}
 
 		var (
-			cmd   Command
+			query Query
 			empty bool
 		)
 
 		if l[0] == '*' {
-			cmd, err = readMultiBulkCommand(buffer)
+			query, err = readMultiBulkQuery(buffer)
 		} else {
-			cmd, empty, err = readInlineCommand(buffer)
+			query, empty, err = readInlineQuery(buffer)
 		}
 
 		if err != nil {
@@ -113,42 +125,40 @@ func ReadCommand(b []byte) (commands []Command, l []byte, err error) {
 			continue
 		}
 
-		commands = append(commands, cmd)
+		querys = append(querys, query)
 	}
 
 	return
 }
 
-func readInlineCommand(buffer *bytes.Buffer) (cmd Command, empty bool, err error) {
+func readInlineQuery(buffer *bytes.Buffer) (query Query, empty bool, err error) {
 	b, err := buffer.ReadBytes('\n')
 	if err != nil {
 		return
 	}
 
-	args := bytes.Split(b, []byte{' '})
+	args := bytes.Fields(b)
 
-	for _, arg := range args {
-		arg = bytes.Trim(arg, " \r\n")
-		if len(arg) > 0 {
-			cmd = append(cmd, arg)
+	if len(args) > 0 {
+		query.Command = args[0]
+		for _, arg := range args[1:] {
+			query.Arguments = append(query.Arguments, arg)
 		}
-	}
-
-	if len(cmd) == 0 {
+	} else {
 		empty = true
 	}
 
 	return
 }
 
-func readMultiBulkCommand(buffer *bytes.Buffer) (cmd Command, err error) {
+func readMultiBulkQuery(buffer *bytes.Buffer) (query Query, err error) {
 	var cnt int
 	cnt, err = readArgsCount(buffer)
 	if err != nil {
 		return
 	}
 
-	cmd = make(Command, 0, cnt)
+	query.Arguments = make([][]byte, 0, cnt-1)
 
 	for i := 0; i < cnt; i++ {
 		var argLength int
@@ -162,7 +172,11 @@ func readMultiBulkCommand(buffer *bytes.Buffer) (cmd Command, err error) {
 			return
 		}
 
-		cmd = append(cmd, arg)
+		if i == 0 {
+			query.Command = arg
+		} else {
+			query.Arguments = append(query.Arguments, arg)
+		}
 	}
 
 	return

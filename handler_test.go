@@ -12,14 +12,14 @@ func testHandlerChain(t *testing.T) {
 		return NewSimpleStringsReply("FOO"), nil
 	}))
 	req := &Request{
-		Command: Command{[]byte("GET")},
+		Query: Query{Command: []byte("GET")},
 	}
 	reply, err := chain.Handle(req)
 	assert.Nil(err)
 	assert.EqualValues([]byte("+FOO"), reply)
 
 	chain.AddFunc(func(request *Request, next Handler) (Reply, error) {
-		if request.GetStr(0) == "FOO" {
+		if request.CommandStr() == "FOO" {
 			return next.Handle(req)
 		}
 		return NewSimpleStringsReply("BAR"), nil
@@ -30,7 +30,7 @@ func testHandlerChain(t *testing.T) {
 	assert.EqualValues([]byte("+FOO"), reply)
 
 	req = &Request{
-		Command: Command{[]byte("FOO")},
+		Query: Query{Command: []byte("FOO")},
 	}
 	reply, err = chain.Handle(req)
 	assert.Nil(err)
@@ -48,14 +48,14 @@ func testMappedHandler(t *testing.T) {
 	})
 
 	req := &Request{
-		Command: Command{[]byte("FOO")},
+		Query: Query{Command: []byte("FOO")},
 	}
 	reply, err := mh.Handle(req)
 	assert.Nil(err)
 	assert.EqualValues([]byte("+BAR"), reply)
 
 	req = &Request{
-		Command: Command{[]byte("BAR")},
+		Query: Query{Command: []byte("BAR")},
 	}
 	reply, err = mh.Handle(req)
 	assert.Nil(err)

@@ -77,7 +77,7 @@ func (mh *MappedHandler) SetFunc(command string, f func(request *Request) (Reply
 }
 
 func (mh *MappedHandler) Handle(request *Request) (Reply, error) {
-	command := strings.ToUpper(request.GetStr(0))
+	command := strings.ToUpper(request.CommandStr())
 	if handler, exist := mh.handlers[command]; exist {
 		return handler.Handle(request)
 	}

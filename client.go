@@ -12,24 +12,24 @@ var (
 )
 
 // NewRequest creates a new Request with the given Client and Request.
-func NewRequest(client *Client, cmd Command) *Request {
+func NewRequest(client *Client, query Query) *Request {
 	req := new(Request)
 	req.Client = client
-	req.Command = cmd
+	req.Query = query
 	return req
 }
 
 // Request links the Request with the Client.
 type Request struct {
 	*Client
-	Command
+	Query
 }
 
 // ClientStats contains the statistics data.
 type ClientStats struct {
 	BytesIn  int
 	BytesOut int
-	Commands int
+	Queries  int
 }
 
 // Client contains the client connection and deadline for closing.
@@ -127,9 +127,9 @@ func (c *Client) run() {
 
 		c.stats.BytesIn += nr
 
-		var cmds Commands
+		var queries Querys
 		l := c.b[:c.bsize+nr]
-		cmds, l, err = ReadCommand(l)
+		queries, l, err = ReadQuery(l)
 		if err != nil {
 			c.s.logger.Error("fail to read command: %s.", err.Error())
 			return
@@ -137,17 +137,17 @@ func (c *Client) run() {
 		copy(c.b, l)
 		c.bsize = len(l)
 
-		c.stats.Commands += len(cmds)
+		c.stats.Queries += len(queries)
 		c.refreshDeadline(c.s.config.IdleTimeout)
 
-		c.s.logger.Debug("read %d requests: \"%s\".", len(cmds), cmds)
+		c.s.logger.Debug("read %d requests: \"%s\".", len(queries), queries)
 
 		var replies Replies
 
-		for _, cmd := range cmds {
+		for _, query := range queries {
 			var reply Reply
 
-			reply, err = c.s.handler.Handle(NewRequest(c, cmd))
+			reply, err = c.s.handler.Handle(NewRequest(c, query))
 			if err != nil {
 				if err == ErrHaltClient {
 					shouldReturn = true

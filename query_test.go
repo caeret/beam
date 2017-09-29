@@ -6,93 +6,93 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestReadInlineCommand(t *testing.T) {
+func TestReadInlineQuery(t *testing.T) {
 	assert := assert.New(t)
 	var (
-		cmds []Command
-		b    []byte
-		l    []byte
-		err  error
+		querys []Query
+		b      []byte
+		l      []byte
+		err    error
 	)
 
 	b = []byte("GET foo\r\nGET bar\n")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Nil(err)
 	assert.Equal(
-		[]Command{
-			{[]byte("GET"), []byte("foo")},
-			{[]byte("GET"), []byte("bar")},
-		}, cmds)
+		[]Query{
+			NewQuery("GET", "foo"),
+			NewQuery("GET", "bar"),
+		}, querys)
 	assert.Empty(l)
 
 	b = []byte("GET foo\r\nGET")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Nil(err)
 	assert.Equal(
-		[]Command{
-			{[]byte("GET"), []byte("foo")},
-		}, cmds)
+		[]Query{
+			NewQuery("GET", "foo"),
+		}, querys)
 	assert.Equal([]byte("GET"), l)
 }
 
-func TestReadMultiBuckCommand(t *testing.T) {
+func TestReadMultiBuckQuery(t *testing.T) {
 	assert := assert.New(t)
 	var (
-		cmds []Command
-		b    []byte
-		l    []byte
-		err  error
+		querys []Query
+		b      []byte
+		l      []byte
+		err    error
 	)
 
 	b = []byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n*2\r\n$3\r\nGET\r\n$3\r\nbar\r\n")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Nil(err)
 	assert.Empty(l)
 	assert.Equal(
-		[]Command{
-			{[]byte("GET"), []byte("foo")},
-			{[]byte("GET"), []byte("bar")},
+		[]Query{
+			NewQuery("GET", "foo"),
+			NewQuery("GET", "bar"),
 		},
-		cmds)
+		querys)
 
 	b = []byte("*2\r\nhello")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Equal(ErrFormat, err)
 	assert.Empty(l)
 
 	b = []byte("*1\r\n$4\r\nPING\r\n*2\r\n$3GET\r")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Nil(err)
-	assert.Equal([]Command{{[]byte("PING")}}, cmds)
+	assert.Equal([]Query{NewQuery("PING")}, querys)
 	assert.Equal([]byte("*2\r\n$3GET\r"), l)
 
 	b = []byte("*2\r\n$3GET\r")
-	cmds, l, err = ReadCommand(b)
+	querys, l, err = ReadQuery(b)
 	assert.Nil(err)
 	assert.Equal(b, l)
 }
 
-func TestCommand_String(t *testing.T) {
+func TestQuery_String(t *testing.T) {
 	assert := assert.New(t)
-	req1 := Command{[]byte("GET"), []byte("bar")}
+	req1 := NewQuery("GET", "bar")
 	assert.Equal(req1.String(), "*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nbar\\r\\n")
 
-	req2 := Command{[]byte("PING")}
+	req2 := NewQuery("PING")
 	assert.Equal(req2.String(), "*1\\r\\n$4\\r\\nPING\\r\\n")
 }
 
-func TestCommand_Raw(t *testing.T) {
+func TestQuery_Raw(t *testing.T) {
 	assert := assert.New(t)
-	req1 := Command{[]byte("GET"), []byte("bar")}
+	req1 := NewQuery("GET", "bar")
 	assert.Equal(req1.Raw(), "*2\r\n$3\r\nGET\r\n$3\r\nbar\r\n")
 
-	req2 := Command{[]byte("PING")}
+	req2 := NewQuery("PING")
 	assert.Equal(req2.Raw(), "*1\r\n$4\r\nPING\r\n")
 }
 
-func TestNewCommand(t *testing.T) {
+func TestNewQuery(t *testing.T) {
 	assert := assert.New(t)
-	req := NewCommand("PING")
-	assert.Len(req, 1)
-	assert.Equal([]byte("PING"), req[0])
+	query := NewQuery("PING")
+	assert.Equal(query.Len(), 0)
+	assert.Equal([]byte("PING"), query.Command)
 }
