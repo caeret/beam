@@ -140,7 +140,7 @@ func (c *Client) run() {
 		c.stats.Queries += len(queries)
 		c.refreshDeadline(c.s.config.IdleTimeout)
 
-		c.s.logger.Debug("read %d requests: \"%s\".", len(queries), queries)
+		c.s.logger.Debug("read %d queries: \"%s\".", len(queries), queries)
 
 		var replies Replies
 
@@ -161,7 +161,7 @@ func (c *Client) run() {
 			replies = append(replies, reply)
 		}
 
-		c.s.logger.Debug("send %d responses: \"%s\".", len(replies), replies)
+		c.s.logger.Debug("send %d replies: \"%s\".", len(replies), replies)
 
 		err = c.conn.SetWriteDeadline(time.Now().Add(c.s.config.RWTimeout))
 		if err != nil {
